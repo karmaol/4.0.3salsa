@@ -513,14 +513,18 @@ impl BankingStage {
                 block_production_method,
                 num_workers,
                 config,
-            } => match block_production_method {
-                BlockProductionMethod::CentralScheduler => {
-                    self.spawn_internal_central(false, num_workers, config)
+            } => {
+                #[cfg(unix)]
+                crate::scheduler_bindings_server::restore_tpu_override();
+                match block_production_method {
+                    BlockProductionMethod::CentralScheduler => {
+                        self.spawn_internal_central(false, num_workers, config)
+                    }
+                    BlockProductionMethod::CentralSchedulerGreedy => {
+                        self.spawn_internal_central(true, num_workers, config)
+                    }
                 }
-                BlockProductionMethod::CentralSchedulerGreedy => {
-                    self.spawn_internal_central(true, num_workers, config)
-                }
-            },
+            }
             #[cfg(unix)]
             BankingControlMsg::External { session } => self.spawn_external(session),
         })?;
@@ -732,6 +736,7 @@ mod external {
                 tpu_to_pack,
                 progress_tracker,
                 workers,
+                tpu_override: _,
             }: AgaveSession,
         ) -> Result<Vec<JoinHandle<()>>, ()> {
             info!("Spawning external scheduler");

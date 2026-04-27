@@ -27,6 +27,10 @@ pub struct ClientLogon {
     pub worker_to_pack_capacity: usize,
     /// Flags that control the behavior of the new scheduling session.
     pub flags: u16,
+    /// IPv4 octets for the optional TPU address override; ignored when `tpu_override_port` is 0.
+    pub tpu_override_addr: [u8; 4],
+    /// Port for the TPU address override; 0 means no override is requested.
+    pub tpu_override_port: u16,
     // NB: If adding more fields please ensure:
     // - The fields are zeroable.
     // - If possible the fields are backwards compatible:

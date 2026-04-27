@@ -15,6 +15,7 @@ use {
         ffi::CStr,
         fs::File,
         io::{IoSlice, Read, Write},
+        net::SocketAddr,
         os::{
             fd::{AsRawFd, FromRawFd},
             unix::net::{UnixListener, UnixStream},
@@ -185,6 +186,14 @@ impl Server {
             },
         )?;
 
+        let tpu_override = (logon.tpu_override_port != 0)
+            .then(|| SocketAddr::from((logon.tpu_override_addr, logon.tpu_override_port)));
+        if let Some(addr) = tpu_override {
+            if addr.ip().is_unspecified() || addr.ip().is_multicast() {
+                return Err(AgaveHandshakeError::InvalidTpuOverride(addr));
+            }
+        }
+
         Ok((
             AgaveSession {
                 flags: logon.flags,
@@ -194,6 +203,7 @@ impl Server {
                 },
                 progress_tracker,
                 workers,
+                tpu_override,
             },
             [allocator_file, tpu_to_pack_file, progress_tracker_file]
                 .into_iter()
@@ -348,6 +358,8 @@ pub struct AgaveSession {
     pub tpu_to_pack: AgaveTpuToPackSession,
     pub progress_tracker: shaq::Producer<ProgressMessage>,
     pub workers: Vec<AgaveWorkerSession>,
+    /// TPU address override requested by the client, if any.
+    pub tpu_override: Option<SocketAddr>,
 }
 
 /// Shared memory objects for the tpu to pack worker.
@@ -386,4 +398,6 @@ pub enum AgaveHandshakeError {
     RtsAlloc(#[from] RtsAllocError),
     #[error("Shaq; err={0:?}")]
     Shaq(#[from] ShaqError),
+    #[error("Invalid TPU override; addr={0}")]
+    InvalidTpuOverride(SocketAddr),
 }
