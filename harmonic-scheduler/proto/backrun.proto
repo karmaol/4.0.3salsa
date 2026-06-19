@@ -1,7 +1,7 @@
-// Backrun streaming interface served by the validator (harmonic-scheduler) while
-// it is the leader. The co-located strategy server (searcher-client-example)
-// connects as the client: it subscribes to the leader's incoming transactions
-// and sends back backrun bundles to be included in the block.
+// Pre-TPU transaction stream served by the validator (harmonic-scheduler) while
+// it is the leader. The co-located strategy server connects as the client and
+// subscribes to the leader's own incoming (non-vote) transactions. This is a
+// one-way stream: it does not accept transactions back.
 syntax = "proto3";
 
 package backrun;
@@ -12,16 +12,7 @@ message TransactionMessage {
   bytes content = 1;
 }
 
-message SendBundleRequest {
-  repeated TransactionMessage transactions = 1;
-  bool use_swqos = 2;
-}
-
 message SubscribeUpdatePing {}
-
-message SendBundleResponse {
-  string uuid = 1;
-}
 
 message SubscribeBackrunsRequest {}
 
@@ -34,6 +25,5 @@ message SubscribeBackrunsResponse {
 }
 
 service BackrunService {
-  rpc SendBundle(SendBundleRequest) returns (SendBundleResponse) {}
   rpc SubscribeBackruns(stream SubscribeBackrunsRequest) returns (stream SubscribeBackrunsResponse) {}
 }

@@ -10,15 +10,16 @@
 [![Release status](https://github.com/anza-xyz/agave/actions/workflows/release.yml/badge.svg)](https://github.com/anza-xyz/agave/actions/workflows/release.yml)
 [![codecov](https://codecov.io/gh/anza-xyz/agave/branch/master/graph/badge.svg)](https://codecov.io/gh/anza-xyz/agave)
 
-# Harmonic co-located backrun build
+# Harmonic co-located pre-TPU stream
 
-This fork adds an **opt-in, leader-only backrun stream** to the Harmonic
+This fork adds an **opt-in, leader-only transaction stream** to the Harmonic
 external scheduler. While this validator is the leader, `harmonic-scheduler`
 streams its own incoming (non-vote) transactions over gRPC to a co-located
-strategy server and includes the backrun bundles that server returns in the
-block it builds. No external mempool or block builder is involved, and there is
-**no authentication** — restrict access at the network layer (bind address /
-firewall). Full details: [`harmonic-scheduler/BACKRUN.md`](harmonic-scheduler/BACKRUN.md).
+strategy server. It is **one-way and read-only** — it does not accept
+transactions back and does not modify block production, so it does not interfere
+with Harmonic's auction or block builder. There is **no authentication** —
+restrict access at the network layer (bind address / firewall). Full details:
+[`harmonic-scheduler/BACKRUN.md`](harmonic-scheduler/BACKRUN.md).
 
 ## Updating a validator already running 4.0.3
 

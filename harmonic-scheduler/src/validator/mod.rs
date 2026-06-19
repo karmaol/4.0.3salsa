@@ -21,7 +21,7 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::Duration;
 use tip_manager::{BlockBuilderFeeInfo, TipManager};
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, watch};
 
 /// Backoff between ipc connection attempts
 const IPC_CONNECTION_BACKOFF: Duration = Duration::from_secs(5);
@@ -51,7 +51,6 @@ pub fn run(
     leader_tx: watch::Sender<Option<LeaderNotification>>,
     backrun_tx: broadcast::Sender<Bytes>,
     is_leader: Arc<AtomicBool>,
-    mut backrun_rx: mpsc::UnboundedReceiver<Vec<Bytes>>,
 ) {
     loop {
         for _ in drain(&mut block_rx, usize::MAX) {}
@@ -124,7 +123,6 @@ pub fn run(
                         tip_manager_rx.clone(),
                         fee_info.clone(),
                         is_leader.clone(),
-                        &mut backrun_rx,
                     )
                     .run();
                 })

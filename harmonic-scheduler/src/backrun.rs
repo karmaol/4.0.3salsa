@@ -1,16 +1,13 @@
-//! Co-located backrun stream.
+//! Co-located pre-TPU transaction stream.
 //!
 //! While this validator is the leader, the scheduler streams its own incoming
-//! (non-vote) transactions to a connected strategy server and accepts backrun
-//! bundles back to include in the block. This module hosts the `BackrunService`
-//! gRPC server and the channels bridging the async runtime to the synchronous
-//! scheduler thread:
+//! (non-vote) transactions to a connected strategy server. This module hosts
+//! the `BackrunService` gRPC server and the broadcast channel bridging the
+//! synchronous scheduler/TPU thread to the async runtime.
 //!
-//! * `tx_out` (broadcast): scheduler/TPU thread -> searcher (`SubscribeBackruns`)
-//! * `bundle_in` (mpsc): searcher (`SendBundle`) -> scheduler thread
-//!
-//! Leader gating lives in the scheduler/TPU threads via a shared `is_leader`
-//! flag; this server is a thin transport.
+//! This is a **one-way stream**: it does not accept transactions back and does
+//! not modify block production. Leader gating lives in the scheduler/TPU
+//! threads via a shared `is_leader` flag; this server is a thin transport.
 
 pub mod proto {
     tonic::include_proto!("backrun");
@@ -21,12 +18,10 @@ use log::{info, warn};
 use proto::backrun_service_server::{BackrunService, BackrunServiceServer};
 use proto::subscribe_backruns_response::UpdateOneof;
 use proto::{
-    SendBundleRequest, SendBundleResponse, SubscribeBackrunsRequest, SubscribeBackrunsResponse,
-    SubscribeUpdatePing, TransactionMessage,
+    SubscribeBackrunsRequest, SubscribeBackrunsResponse, SubscribeUpdatePing, TransactionMessage,
 };
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::Stream;
@@ -36,48 +31,23 @@ use tonic::{Request, Response, Status, Streaming};
 
 /// Broadcast capacity for the outbound transaction stream.
 pub const TX_OUT_CAPACITY: usize = 8192;
-/// Keepalive ping interval on the backrun subscription.
+/// Keepalive ping interval on the subscription.
 const PING_INTERVAL: Duration = Duration::from_secs(5);
 
-/// gRPC service bridging searcher <-> scheduler thread.
+/// gRPC service that streams the leader's transactions to subscribers.
 #[derive(Clone)]
 pub struct BackrunBridge {
     tx_out: broadcast::Sender<Bytes>,
-    bundle_in: mpsc::UnboundedSender<Vec<Bytes>>,
 }
 
 impl BackrunBridge {
-    pub fn new(
-        tx_out: broadcast::Sender<Bytes>,
-        bundle_in: mpsc::UnboundedSender<Vec<Bytes>>,
-    ) -> Self {
-        Self { tx_out, bundle_in }
+    pub fn new(tx_out: broadcast::Sender<Bytes>) -> Self {
+        Self { tx_out }
     }
 }
 
 #[tonic::async_trait]
 impl BackrunService for BackrunBridge {
-    async fn send_bundle(
-        &self,
-        request: Request<SendBundleRequest>,
-    ) -> Result<Response<SendBundleResponse>, Status> {
-        let req = request.into_inner();
-        let txs: Vec<Bytes> = req
-            .transactions
-            .into_iter()
-            .map(|t| Bytes::from(t.content))
-            .filter(|b| !b.is_empty())
-            .collect();
-        if txs.is_empty() {
-            return Err(Status::invalid_argument("bundle has no transactions"));
-        }
-        // Non-blocking; the scheduler thread drains on its next leader tick.
-        if self.bundle_in.send(txs).is_err() {
-            return Err(Status::unavailable("scheduler not running"));
-        }
-        Ok(Response::new(SendBundleResponse { uuid: next_uuid() }))
-    }
-
     type SubscribeBackrunsStream =
         Pin<Box<dyn Stream<Item = Result<SubscribeBackrunsResponse, Status>> + Send>>;
 
@@ -85,7 +55,7 @@ impl BackrunService for BackrunBridge {
         &self,
         request: Request<Streaming<SubscribeBackrunsRequest>>,
     ) -> Result<Response<Self::SubscribeBackrunsStream>, Status> {
-        info!("backrun subscriber connected: {:?}", request.remote_addr());
+        info!("subscriber connected: {:?}", request.remote_addr());
 
         // Drain client keepalives.
         let mut inbound = request.into_inner();
@@ -105,7 +75,7 @@ impl BackrunService for BackrunBridge {
                             }
                         }
                         Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                            warn!("backrun stream lagged, skipped {skipped} txs");
+                            warn!("stream lagged, skipped {skipped} txs");
                         }
                         Err(broadcast::error::RecvError::Closed) => break,
                     },
@@ -122,26 +92,16 @@ impl BackrunService for BackrunBridge {
     }
 }
 
-/// Serve the backrun gRPC endpoint until shutdown.
+/// Serve the transaction-stream gRPC endpoint until shutdown.
 pub async fn serve(addr: SocketAddr, bridge: BackrunBridge) {
-    info!("backrun stream listening on {addr}");
+    info!("transaction stream listening on {addr}");
     if let Err(e) = Server::builder()
         .add_service(BackrunServiceServer::new(bridge))
         .serve(addr)
         .await
     {
-        warn!("backrun server exited: {e}");
+        warn!("stream server exited: {e}");
     }
-}
-
-fn next_uuid() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{now:016x}{seq:08x}")
 }
 
 fn now_ts() -> prost_types::Timestamp {

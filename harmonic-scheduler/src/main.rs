@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tip_manager::{TipManager, TipManagerConfig};
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{oneshot, watch};
 
 const NUM_ASYNC_WORKER_THREADS: usize = 4;
 
@@ -73,11 +73,8 @@ fn main() -> Result<()> {
     // main -> admin rpc
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-    // backrun stream <-> scheduler bridge
-    // scheduler/tpu -> searcher (incoming txs while leader)
+    // pre-TPU transaction stream: scheduler/tpu -> searcher (incoming txs while leader)
     let (backrun_out_tx, _) = tokio::sync::broadcast::channel::<Bytes>(backrun::TX_OUT_CAPACITY);
-    // searcher -> scheduler (backrun bundles)
-    let (backrun_bundle_tx, backrun_bundle_rx) = mpsc::unbounded_channel::<Vec<Bytes>>();
     // set by the scheduler, read by the tpu thread to gate streaming on leadership
     let backrun_is_leader = Arc::new(AtomicBool::new(false));
 
@@ -101,7 +98,6 @@ fn main() -> Result<()> {
                     leader_tx,
                     backrun_out_tx,
                     backrun_is_leader,
-                    backrun_bundle_rx,
                 )
             }
         })?;
@@ -136,7 +132,7 @@ fn main() -> Result<()> {
         fee_info,
     ));
     if let Some(addr) = config.backrun.backrun_listen_addr {
-        let bridge = backrun::BackrunBridge::new(backrun_out_tx, backrun_bundle_tx);
+        let bridge = backrun::BackrunBridge::new(backrun_out_tx);
         rt.spawn(backrun::serve(addr, bridge));
     } else {
         info!("backrun stream disabled (set --backrun-listen-addr to enable)");
