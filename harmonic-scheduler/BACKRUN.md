@@ -21,8 +21,8 @@ unchanged, so updating is just swapping the scheduler binary:
    ```
 2. Replace your running `harmonic-scheduler` binary with the new
    `target/release/harmonic-scheduler`.
-3. Restart the scheduler, adding `--backrun-listen-addr` (and optionally
-   `--backrun-x-token`). Every other flag stays the same.
+3. Restart the scheduler, adding `--backrun-listen-addr`. Every other flag
+   stays the same.
 
 No change to the agave validator process, no re-sync, no gossip/config changes.
 Rolling back is the same step in reverse (old binary, drop the flag).
@@ -93,26 +93,27 @@ harmonic-scheduler \
   --tip-distribution-program-pubkey <PUBKEY> \
   --merkle-root-upload-authority <PUBKEY> \
   --backrun-listen-addr 0.0.0.0:50051        # enables the feature
-  # --backrun-x-token <SECRET>               # optional shared secret
 ```
 
 The strategy server (co-located, same datacenter) connects with the
-`searcher-client-example` client:
+`searcher-client-example` client — just the IP and port, no token:
 
 ```bash
-backrun_grpc_client --grpc-url http://<validator-host>:50051 --x-token <SECRET>
+backrun_grpc_client --grpc-url http://<validator-host>:50051
 ```
 
 It receives every non-vote transaction the validator sees during its leader
 slots, and returns backrun bundles via `SendBundle` that the validator includes
 in the block.
 
+There is **no authentication** on the endpoint — restrict access at the network
+layer (the bind address and your firewall).
+
 ## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--backrun-listen-addr` | unset (disabled) | Address to serve the backrun gRPC stream on |
-| `--backrun-x-token` | none | If set, required in the `x-token` metadata of clients |
 
 ## Notes / limitations
 

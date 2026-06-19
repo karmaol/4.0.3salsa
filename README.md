@@ -10,6 +10,54 @@
 [![Release status](https://github.com/anza-xyz/agave/actions/workflows/release.yml/badge.svg)](https://github.com/anza-xyz/agave/actions/workflows/release.yml)
 [![codecov](https://codecov.io/gh/anza-xyz/agave/branch/master/graph/badge.svg)](https://codecov.io/gh/anza-xyz/agave)
 
+# Harmonic co-located backrun build
+
+This fork adds an **opt-in, leader-only backrun stream** to the Harmonic
+external scheduler. While this validator is the leader, `harmonic-scheduler`
+streams its own incoming (non-vote) transactions over gRPC to a co-located
+strategy server and includes the backrun bundles that server returns in the
+block it builds. No external mempool or block builder is involved, and there is
+**no authentication** — restrict access at the network layer (bind address /
+firewall). Full details: [`harmonic-scheduler/BACKRUN.md`](harmonic-scheduler/BACKRUN.md).
+
+## Updating a validator already running 4.0.3
+
+Only the `harmonic-scheduler` binary changes — the agave validator, the IPC
+surface, and on-disk state are untouched. You swap one binary and add one flag.
+
+```bash
+# 1. Get this fork
+git clone https://github.com/karmaol/4.0.3salsa.git
+cd 4.0.3salsa
+
+# 2. Build only the scheduler (release). protoc is vendored, no system install needed.
+cargo build --release -p harmonic-scheduler
+#    -> target/release/harmonic-scheduler
+
+# 3. Stop your running harmonic-scheduler and install the new binary, e.g.
+sudo install -m 755 target/release/harmonic-scheduler /usr/local/bin/harmonic-scheduler
+
+# 4. Restart it with your existing flags PLUS the backrun endpoint:
+harmonic-scheduler \
+  --ledger /path/to/ledger \
+  --remote-tpu-url <REMOTE_TPU_URL> \
+  --block-engine-url <BLOCK_ENGINE_URL> \
+  --tip-payment-program-pubkey <PUBKEY> \
+  --tip-distribution-program-pubkey <PUBKEY> \
+  --merkle-root-upload-authority <PUBKEY> \
+  --backrun-listen-addr 0.0.0.0:50051
+```
+
+Without `--backrun-listen-addr` the scheduler behaves exactly as stock 4.0.3.
+To roll back, reinstall your previous binary and drop the flag. The agave
+validator process is not touched, so no re-sync is required.
+
+Your co-located strategy server then connects as a plain gRPC client (just IP
+and port, no token) to `http://<this-validator-ip>:50051` — see
+[`searcher-client-example`](https://github.com/karmaol/searcher-client-example-master).
+
+---
+
 # Building
 
 ## **1. Install rustc, cargo and rustfmt.**

@@ -136,11 +136,7 @@ fn main() -> Result<()> {
         fee_info,
     ));
     if let Some(addr) = config.backrun.backrun_listen_addr {
-        let bridge = backrun::BackrunBridge::new(
-            backrun_out_tx,
-            backrun_bundle_tx,
-            config.backrun.backrun_x_token,
-        );
+        let bridge = backrun::BackrunBridge::new(backrun_out_tx, backrun_bundle_tx);
         rt.spawn(backrun::serve(addr, bridge));
     } else {
         info!("backrun stream disabled (set --backrun-listen-addr to enable)");

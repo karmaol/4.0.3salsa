@@ -26,7 +26,6 @@ use proto::{
 };
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 use tokio::sync::{broadcast, mpsc};
@@ -45,35 +44,14 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 pub struct BackrunBridge {
     tx_out: broadcast::Sender<Bytes>,
     bundle_in: mpsc::UnboundedSender<Vec<Bytes>>,
-    x_token: Option<Arc<String>>,
 }
 
 impl BackrunBridge {
     pub fn new(
         tx_out: broadcast::Sender<Bytes>,
         bundle_in: mpsc::UnboundedSender<Vec<Bytes>>,
-        x_token: Option<String>,
     ) -> Self {
-        Self {
-            tx_out,
-            bundle_in,
-            x_token: x_token.map(Arc::new),
-        }
-    }
-
-    fn authorize<T>(&self, request: &Request<T>) -> Result<(), Status> {
-        let Some(expected) = &self.x_token else {
-            return Ok(());
-        };
-        let provided = request
-            .metadata()
-            .get("x-token")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default();
-        if provided != expected.as_str() {
-            return Err(Status::unauthenticated("invalid x-token"));
-        }
-        Ok(())
+        Self { tx_out, bundle_in }
     }
 }
 
@@ -83,7 +61,6 @@ impl BackrunService for BackrunBridge {
         &self,
         request: Request<SendBundleRequest>,
     ) -> Result<Response<SendBundleResponse>, Status> {
-        self.authorize(&request)?;
         let req = request.into_inner();
         let txs: Vec<Bytes> = req
             .transactions
@@ -108,7 +85,6 @@ impl BackrunService for BackrunBridge {
         &self,
         request: Request<Streaming<SubscribeBackrunsRequest>>,
     ) -> Result<Response<Self::SubscribeBackrunsStream>, Status> {
-        self.authorize(&request)?;
         info!("backrun subscriber connected: {:?}", request.remote_addr());
 
         // Drain client keepalives.
